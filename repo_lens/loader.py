@@ -1,5 +1,3 @@
-from __future__ import annotations
-
 import hashlib
 import re
 import shutil
@@ -145,18 +143,14 @@ def walk_sources(
 
 
 def _iter_files(root: Path) -> Iterable[Path]:
-    for dirpath, dirnames, filenames in _walk(root):
-        dirnames[:] = [d for d in dirnames if d not in SKIP_DIRS and not d.startswith(".")]
-        for fn in filenames:
-            p = Path(dirpath) / fn
-            if p.name in SPECIAL_NAMES or p.suffix.lower() in SOURCE_EXTS:
-                yield p
-
-
-def _walk(root: Path):
-    import os
-    for dirpath, dirnames, filenames in os.walk(root):
-        yield dirpath, dirnames, filenames
+    for path in root.rglob("*"):
+        if not path.is_file():
+            continue
+        rel_parts = path.relative_to(root).parts
+        if any(part in SKIP_DIRS or part.startswith(".") for part in rel_parts):
+            continue
+        if path.name in SPECIAL_NAMES or path.suffix.lower() in SOURCE_EXTS:
+            yield path
 
 
 def purge_cache(cache_dir: Path) -> int:

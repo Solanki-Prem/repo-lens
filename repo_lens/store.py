@@ -1,5 +1,3 @@
-from __future__ import annotations
-
 import shutil
 import time
 from pathlib import Path
@@ -21,14 +19,14 @@ class _RetryingEmbeddings(Embeddings):
         self._delay = delay
 
     def _run(self, fn, *args):
-        last = None
-        for attempt in range(self._retries):
+        # Try up to _retries times. Wait between attempts. On the final
+        # attempt, let any exception propagate naturally.
+        for attempt in range(self._retries - 1):
             try:
                 return fn(*args)
-            except Exception as exc:
-                last = exc
+            except Exception:
                 time.sleep(self._delay * (attempt + 1))
-        raise last  # type: ignore[misc]
+        return fn(*args)
 
     def embed_documents(self, texts):
         return self._run(self._inner.embed_documents, texts)

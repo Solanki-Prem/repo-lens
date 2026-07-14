@@ -2,8 +2,6 @@
 
 Kept separate from the chains so the Streamlit UI can call it directly."""
 
-from __future__ import annotations
-
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Callable, List, Optional

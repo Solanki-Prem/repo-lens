@@ -52,9 +52,6 @@ EMBED_PROVIDER=huggingface      # or openai
 HUGGINGFACEHUB_API_TOKEN=hf_...
 ```
 
-See `PROJECT_GUIDE.md` for a full walkthrough — architecture,
-concepts, interview Q&A, and how to demo it.
-
 ## Project layout
 
 ```

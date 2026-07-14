@@ -1,6 +1,6 @@
-"""High level orchestration: clone, chunk, embed, store, summarise.
+"""High-level orchestration: clone, chunk, embed, store, summarise.
 
-Kept separate from the chains so the Streamlit app and the CLI can share it."""
+Kept separate from the chains so the Streamlit UI can call it directly."""
 
 from __future__ import annotations
 

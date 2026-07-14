@@ -90,7 +90,7 @@ def clone_or_use_local(source: str, cache_dir: Path) -> Path:
     return target
 
 
-def _language_for(path: Path) -> str:
+def language_for(path: Path) -> str:
     ext = path.suffix.lower()
     if path.name in SPECIAL_NAMES:
         return path.name.lower()
@@ -136,7 +136,7 @@ def walk_sources(
             repo_id=repo_id,
             path=rel,
             abs_path=path,
-            language=_language_for(path),
+            language=language_for(path),
             size=size,
             text=text,
         )

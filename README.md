@@ -22,6 +22,10 @@ pip install -r requirements.txt
 
 ## Run
 
+There are two ways to use it — pick whichever you prefer.
+
+### Streamlit UI
+
 ```bash
 streamlit run app.py
 ```
@@ -36,6 +40,29 @@ Then in the sidebar:
    or switch to `openai`.
 3. Paste a GitHub URL (or a local path), click **Index**, then use the
    tabs: **Ask**, **Architecture**, **File docs**, **Explain function**.
+
+### CLI
+
+For headless use — piping into scripts, quick one-off questions. The
+CLI reads provider + API keys from environment variables (or a `.env`
+file); see the Configuration section below for the variable names.
+
+```bash
+# Index a public repo (clones on first use, reused after)
+python -m repo_lens.cli index https://github.com/tiangolo/typer
+
+# Ask a question about it
+python -m repo_lens.cli ask https://github.com/tiangolo/typer \
+    "How does typer parse CLI arguments?"
+
+# Generate docs for one file
+python -m repo_lens.cli docs https://github.com/tiangolo/typer typer/main.py
+
+# One-page architecture summary
+python -m repo_lens.cli arch https://github.com/tiangolo/typer
+```
+
+Every command supports `--help` for details.
 
 ## Configuration
 
@@ -65,7 +92,8 @@ repo-lens/
 │   ├── chains.py         # LangChain chains: ask, docs, explain, arch
 │   ├── prompts.py        # Prompt templates
 │   ├── analyzer.py       # AST/regex function discovery
-│   └── pipeline.py       # index_repo() glue
+│   ├── pipeline.py       # index_repo() glue
+│   └── cli.py            # Command-line interface
 ├── requirements.txt
 └── README.md
 ```

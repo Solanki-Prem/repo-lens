@@ -1,0 +1,5 @@
+[server]
+# Poll-based watching avoids Streamlit introspecting every imported
+# module. Prevents noisy transformers/torchvision ModuleNotFoundError
+# warnings on startup from optional CV submodules we don't use.
+fileWatcherType = "poll"

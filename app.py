@@ -103,20 +103,23 @@ st.sidebar.markdown("**Previously indexed**")
 if ready:
     indexed = VectorStore.list_indexed(settings)
     if indexed:
-        chosen = st.sidebar.selectbox("Switch to", ["-"] + indexed, index=0)
-        if chosen and chosen != "-" and chosen != st.session_state.get("repo_id"):
-            st.session_state["repo_id"] = chosen
-            # Restore the original URL/path so re-indexing and the tabs
-            # work correctly. Fall back to the cached folder path for
-            # older indexes that never wrote the source marker.
-            original = get_indexed_source(settings, chosen)
-            if original:
-                st.session_state["source"] = original
-            else:
-                cached_path = settings.repo_cache_dir / chosen
-                st.session_state["source"] = (
-                    str(cached_path) if cached_path.exists() else ""
-                )
+        current = st.session_state.get("repo_id")
+        for rid in indexed:
+            btn_type = "primary" if rid == current else "secondary"
+            if st.sidebar.button(rid, key=f"switch_{rid}", type=btn_type,
+                                 use_container_width=True) and rid != current:
+                st.session_state["repo_id"] = rid
+                # Restore the original URL/path so re-indexing and the tabs
+                # work correctly. Fall back to the cached folder path for
+                # older indexes that never wrote the source marker.
+                original = get_indexed_source(settings, rid)
+                if original:
+                    st.session_state["source"] = original
+                else:
+                    cached_path = settings.repo_cache_dir / rid
+                    st.session_state["source"] = (
+                        str(cached_path) if cached_path.exists() else ""
+                    )
     else:
         st.sidebar.caption("Nothing indexed yet.")
 
@@ -171,7 +174,7 @@ if not repo_id:
     st.write(
         "Point the sidebar at a GitHub URL (or a local path), hit **Index**, "
         "and the project is embedded into a private Chroma collection. Then "
-        "use the tabs to ask questions, generate docs, or map the architecture."
+        "pick a section above to ask questions, generate docs, or map the architecture."
     )
     st.stop()
 
@@ -186,11 +189,18 @@ st.caption(
     f"embed: {settings.embed_provider}/{settings.embed_model}"
 )
 
-tab_ask, tab_arch, tab_docs, tab_fn = st.tabs(
-    ["Ask", "Architecture", "File docs", "Explain function"]
+# Radio-based navigation instead of st.tabs — persists the active
+# section across reruns via session_state, so button clicks inside
+# a section don't warp you back to the first one.
+section = st.radio(
+    "Section",
+    ["Ask", "Architecture", "File docs", "Explain function"],
+    horizontal=True,
+    label_visibility="collapsed",
+    key="active_section",
 )
 
-with tab_ask:
+if section == "Ask":
     question = st.text_input("Your question", key="ask_q",
                              placeholder="What does the authentication middleware do?")
     col1, col2 = st.columns([2, 1])
@@ -208,7 +218,7 @@ with tab_ask:
             for s in ans.sources:
                 st.markdown(f"- `{s}`")
 
-with tab_arch:
+elif section == "Architecture":
     st.write("Builds a one-page architecture summary from the file tree and headers.")
     if st.button("Generate summary", key="arch_btn"):
         root = _repo_root(active_source, repo_id)
@@ -222,7 +232,7 @@ with tab_arch:
         with st.expander("File tree input"):
             st.code(tree)
 
-with tab_docs:
+elif section == "File docs":
     root = _repo_root(active_source, repo_id)
     files = list(walk_sources(root, repo_id, settings.max_file_bytes))
     if not files:
@@ -236,7 +246,7 @@ with tab_docs:
                                    language=picked.language)
             st.markdown(md)
 
-with tab_fn:
+elif section == "Explain function":
     root = _repo_root(active_source, repo_id)
     refs = list_python_functions(root, repo_id) + list_js_like_functions(root)
     if not refs:

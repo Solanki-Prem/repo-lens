@@ -4,8 +4,8 @@ from dataclasses import dataclass
 from typing import List, Optional
 
 from langchain_core.documents import Document
+from langchain_core.language_models import BaseChatModel
 from langchain_core.output_parsers import StrOutputParser
-from langchain_openai import ChatOpenAI
 
 from .config import Settings
 from .prompts import (
@@ -23,12 +23,33 @@ class Answer:
     sources: List[str]
 
 
-def _llm(settings: Settings, temperature: float = 0.1) -> ChatOpenAI:
-    return ChatOpenAI(
-        model=settings.chat_model,
-        api_key=settings.openai_api_key,
-        temperature=temperature,
-    )
+def _llm(settings: Settings, temperature: float = 0.1) -> BaseChatModel:
+    provider = settings.chat_provider
+    if provider == "openai":
+        from langchain_openai import ChatOpenAI
+
+        return ChatOpenAI(
+            model=settings.chat_model,
+            api_key=settings.chat_api_key,
+            temperature=temperature,
+        )
+    if provider == "anthropic":
+        from langchain_anthropic import ChatAnthropic
+
+        return ChatAnthropic(
+            model=settings.chat_model,
+            api_key=settings.chat_api_key,
+            temperature=temperature,
+        )
+    if provider == "google":
+        from langchain_google_genai import ChatGoogleGenerativeAI
+
+        return ChatGoogleGenerativeAI(
+            model=settings.chat_model,
+            google_api_key=settings.chat_api_key,
+            temperature=temperature,
+        )
+    raise ValueError(f"Unsupported chat provider: {provider}")
 
 
 def _format_context(docs: List[Document]) -> str:

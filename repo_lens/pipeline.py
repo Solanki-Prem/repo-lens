@@ -44,11 +44,11 @@ def index_repo(
     if not files:
         raise RuntimeError("No source files were found at that location.")
 
-    store = VectorStore(settings, rid)
-    if rebuild and store.count() > 0:
+    if rebuild:
         _log(progress, "Wiping previous index...")
-        store.reset()
+        VectorStore.wipe(settings, rid)
 
+    store = VectorStore(settings, rid)
     if store.count() > 0 and not rebuild:
         _log(progress, "Reusing existing index.")
         return IndexResult(
@@ -76,7 +76,8 @@ def file_tree(root: Path, max_entries: int = 200) -> str:
     """Compact tree string. Useful as model input for the architecture chain."""
     entries: List[str] = []
     for p in sorted(root.rglob("*")):
-        if any(part.startswith(".") or part in {"node_modules", "dist", "build"} for part in p.parts):
+        rel_parts = p.relative_to(root).parts
+        if any(part.startswith(".") or part in {"node_modules", "dist", "build"} for part in rel_parts):
             continue
         rel = p.relative_to(root).as_posix()
         if p.is_dir():

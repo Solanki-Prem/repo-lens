@@ -22,7 +22,8 @@ def list_python_functions(root: Path, repo_id: str) -> List[FunctionRef]:
     """Walk a Python repo and return every top-level or class-level function."""
     out: List[FunctionRef] = []
     for py in root.rglob("*.py"):
-        if any(part.startswith(".") or part in {"node_modules", "venv", ".venv"} for part in py.parts):
+        rel_parts = py.relative_to(root).parts
+        if any(part.startswith(".") or part in {"node_modules", "venv"} for part in rel_parts):
             continue
         try:
             text = py.read_text(encoding="utf-8")
@@ -76,7 +77,8 @@ def list_js_like_functions(root: Path, exts={".js", ".jsx", ".ts", ".tsx"}) -> L
     for path in root.rglob("*"):
         if path.suffix.lower() not in exts:
             continue
-        if any(part in {"node_modules", "dist", "build", ".next"} for part in path.parts):
+        rel_parts = path.relative_to(root).parts
+        if any(part.startswith(".") or part in {"node_modules", "dist", "build"} for part in rel_parts):
             continue
         try:
             text = path.read_text(encoding="utf-8")

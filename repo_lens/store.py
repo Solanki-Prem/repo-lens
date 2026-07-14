@@ -1,13 +1,57 @@
 from __future__ import annotations
 
+import shutil
+import time
 from pathlib import Path
 from typing import List, Optional
 
 from langchain_chroma import Chroma
 from langchain_core.documents import Document
-from langchain_openai import OpenAIEmbeddings
+from langchain_core.embeddings import Embeddings
 
 from .config import Settings
+
+
+class _RetryingEmbeddings(Embeddings):
+    """Retries embedding calls — helps with HF cold-model 500s."""
+
+    def __init__(self, inner: Embeddings, retries: int = 5, delay: float = 3.0):
+        self._inner = inner
+        self._retries = retries
+        self._delay = delay
+
+    def _run(self, fn, *args):
+        last = None
+        for attempt in range(self._retries):
+            try:
+                return fn(*args)
+            except Exception as exc:
+                last = exc
+                time.sleep(self._delay * (attempt + 1))
+        raise last  # type: ignore[misc]
+
+    def embed_documents(self, texts):
+        return self._run(self._inner.embed_documents, texts)
+
+    def embed_query(self, text):
+        return self._run(self._inner.embed_query, text)
+
+
+def _build_embeddings(settings: Settings) -> Embeddings:
+    if settings.embed_provider == "huggingface":
+        from langchain_huggingface import HuggingFaceEndpointEmbeddings
+
+        inner = HuggingFaceEndpointEmbeddings(
+            model=settings.embed_model,
+            task="feature-extraction",
+            huggingfacehub_api_token=settings.embed_api_key or None,
+        )
+        return _RetryingEmbeddings(inner)
+    if settings.embed_provider == "openai":
+        from langchain_openai import OpenAIEmbeddings
+
+        return OpenAIEmbeddings(model=settings.embed_model, api_key=settings.embed_api_key)
+    raise ValueError(f"Unsupported embed provider: {settings.embed_provider}")
 
 
 class VectorStore:
@@ -16,12 +60,14 @@ class VectorStore:
     def __init__(self, settings: Settings, repo_id: str):
         self.settings = settings
         self.repo_id = repo_id
-        self._embeddings = OpenAIEmbeddings(
-            model=settings.embed_model,
-            api_key=settings.openai_api_key,
-        )
         self._dir = settings.chroma_dir / repo_id
-        self._dir.mkdir(parents=True, exist_ok=True)
+        # Chroma 1.5.x can open an empty leftover dir in SQLite readonly mode
+        # (usually a crashed prior init). If we see one, drop it so Chroma
+        # gets a clean slate.
+        if self._dir.exists() and not any(self._dir.iterdir()):
+            shutil.rmtree(self._dir)
+        settings.chroma_dir.mkdir(parents=True, exist_ok=True)
+        self._embeddings = _build_embeddings(settings)
         self._db = Chroma(
             collection_name=repo_id.replace("-", "_"),
             embedding_function=self._embeddings,
@@ -29,8 +75,6 @@ class VectorStore:
         )
 
     def add(self, docs: List[Document], batch_size: int = 128) -> int:
-        if not docs:
-            return 0
         total = 0
         for i in range(0, len(docs), batch_size):
             batch = docs[i : i + batch_size]
@@ -39,8 +83,6 @@ class VectorStore:
         return total
 
     def search(self, query: str, k: int = 6, path_prefix: Optional[str] = None) -> List[Document]:
-        filt = {"path": {"$contains": path_prefix}} if path_prefix else None
-        # Chroma doesn't support $contains directly; use a post-filter when needed.
         results = self._db.similarity_search(query, k=k * 3 if path_prefix else k)
         if path_prefix:
             results = [r for r in results if path_prefix in r.metadata.get("path", "")]
@@ -53,26 +95,28 @@ class VectorStore:
         except Exception:
             return 0
 
-    def reset(self) -> None:
-        # Drop the collection by deleting the persistence dir.
-        import shutil
+    @staticmethod
+    def wipe(settings: Settings, repo_id: str) -> None:
+        """Delete a repo's Chroma dir and drop the cached SystemClient.
 
+        chromadb 1.x caches PersistentClient per persist_directory, so
+        after an rmtree the next Chroma() call in the same process would
+        hand back a stale client pointing at deleted SQLite files and
+        error with 'attempt to write a readonly database'.
+        """
+        from chromadb.api.shared_system_client import SharedSystemClient
+
+        target = settings.chroma_dir / repo_id
+        if target.exists():
+            shutil.rmtree(target)
         try:
-            self._db.delete_collection()
+            SharedSystemClient.clear_system_cache()
         except Exception:
             pass
-        if self._dir.exists():
-            shutil.rmtree(self._dir)
-        self._dir.mkdir(parents=True, exist_ok=True)
-        self._db = Chroma(
-            collection_name=self.repo_id.replace("-", "_"),
-            embedding_function=self._embeddings,
-            persist_directory=str(self._dir),
-        )
 
     @staticmethod
     def list_indexed(settings: Settings) -> List[str]:
-        base: Path = settings.chroma_dir
+        base = settings.chroma_dir
         if not base.exists():
             return []
-        return sorted(p.name for p in base.iterdir() if p.is_dir())
+        return sorted(p.name for p in base.iterdir() if p.is_dir() and any(p.iterdir()))

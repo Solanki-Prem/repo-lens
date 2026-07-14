@@ -117,4 +117,10 @@ class VectorStore:
         base = settings.chroma_dir
         if not base.exists():
             return []
-        return sorted(p.name for p in base.iterdir() if p.is_dir() and any(p.iterdir()))
+        # A directory only counts as "indexed" if Chroma actually wrote its
+        # sqlite file. Skips empty stale dirs and dirs containing only our
+        # own _source.txt marker.
+        return sorted(
+            p.name for p in base.iterdir()
+            if p.is_dir() and (p / "chroma.sqlite3").exists()
+        )

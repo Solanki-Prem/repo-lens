@@ -16,6 +16,8 @@ from .loader import (
 )
 from .store import VectorStore
 
+SOURCE_MARKER = "_source.txt"
+
 
 @dataclass
 class IndexResult:
@@ -23,6 +25,28 @@ class IndexResult:
     root: Path
     files_indexed: int
     chunks_indexed: int
+
+
+def _save_source(settings: Settings, repo_id: str, source: str) -> None:
+    """Remember the URL/path we indexed, so the sidebar can restore it later."""
+    marker = settings.chroma_dir / repo_id / SOURCE_MARKER
+    try:
+        marker.parent.mkdir(parents=True, exist_ok=True)
+        marker.write_text(source, encoding="utf-8")
+    except OSError:
+        pass  # non-critical; skip on filesystem errors
+
+
+def get_indexed_source(settings: Settings, repo_id: str) -> Optional[str]:
+    """Look up the original source for a previously-indexed repo, if we saved it."""
+    marker = settings.chroma_dir / repo_id / SOURCE_MARKER
+    if not marker.exists():
+        return None
+    try:
+        text = marker.read_text(encoding="utf-8").strip()
+        return text or None
+    except OSError:
+        return None
 
 
 def index_repo(
@@ -49,6 +73,7 @@ def index_repo(
     store = VectorStore(settings, rid)
     if store.count() > 0 and not rebuild:
         _log(progress, "Reusing existing index.")
+        _save_source(settings, rid, source)
         return IndexResult(
             repo_id=rid,
             root=root,
@@ -61,6 +86,7 @@ def index_repo(
 
     _log(progress, f"Embedding {len(docs)} chunks into Chroma...")
     written = store.add(docs)
+    _save_source(settings, rid, source)
 
     return IndexResult(
         repo_id=rid,

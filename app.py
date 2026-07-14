@@ -21,7 +21,7 @@ from repo_lens.config import (
     Settings,
 )
 from repo_lens.loader import repo_id_for, walk_sources
-from repo_lens.pipeline import file_tree, index_repo, sample_headers
+from repo_lens.pipeline import file_tree, get_indexed_source, index_repo, sample_headers
 from repo_lens.store import VectorStore
 
 st.set_page_config(page_title="repo-lens", page_icon=None, layout="wide")
@@ -104,9 +104,19 @@ if ready:
     indexed = VectorStore.list_indexed(settings)
     if indexed:
         chosen = st.sidebar.selectbox("Switch to", ["-"] + indexed, index=0)
-        if chosen and chosen != "-":
+        if chosen and chosen != "-" and chosen != st.session_state.get("repo_id"):
             st.session_state["repo_id"] = chosen
-            st.session_state["source"] = chosen
+            # Restore the original URL/path so re-indexing and the tabs
+            # work correctly. Fall back to the cached folder path for
+            # older indexes that never wrote the source marker.
+            original = get_indexed_source(settings, chosen)
+            if original:
+                st.session_state["source"] = original
+            else:
+                cached_path = settings.repo_cache_dir / chosen
+                st.session_state["source"] = (
+                    str(cached_path) if cached_path.exists() else ""
+                )
     else:
         st.sidebar.caption("Nothing indexed yet.")
 
@@ -118,9 +128,17 @@ if not ready:
 
 # ---- index / load actions --------------------------------------------------
 
-def _repo_root(source: str) -> Path:
-    cached = settings.repo_cache_dir / repo_id_for(source)
-    return cached if cached.exists() else Path(source).expanduser().resolve()
+def _repo_root(source: str, repo_id: str) -> Path:
+    """Find the folder holding the repo's files.
+
+    Prefers the cache directory keyed by the known repo_id, so we
+    don't re-hash the source string. Falls back to treating source
+    as a local path.
+    """
+    cached = settings.repo_cache_dir / repo_id
+    if cached.exists():
+        return cached
+    return Path(source).expanduser().resolve()
 
 
 if do_index and source:
@@ -193,7 +211,7 @@ with tab_ask:
 with tab_arch:
     st.write("Builds a one-page architecture summary from the file tree and headers.")
     if st.button("Generate summary", key="arch_btn"):
-        root = _repo_root(active_source)
+        root = _repo_root(active_source, repo_id)
         with st.spinner("Reading..."):
             files = list(walk_sources(root, repo_id, settings.max_file_bytes))
             tree = file_tree(root)
@@ -205,7 +223,7 @@ with tab_arch:
             st.code(tree)
 
 with tab_docs:
-    root = _repo_root(active_source)
+    root = _repo_root(active_source, repo_id)
     files = list(walk_sources(root, repo_id, settings.max_file_bytes))
     if not files:
         st.warning("No readable source files at the project root.")
@@ -219,7 +237,7 @@ with tab_docs:
             st.markdown(md)
 
 with tab_fn:
-    root = _repo_root(active_source)
+    root = _repo_root(active_source, repo_id)
     refs = list_python_functions(root, repo_id) + list_js_like_functions(root)
     if not refs:
         st.info("No Python/JS/TS functions detected.")
